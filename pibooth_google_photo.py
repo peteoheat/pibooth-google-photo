@@ -19,7 +19,7 @@ import pibooth
 from pibooth.utils import LOGGER
 
 
-__version__ = "1.2.3"
+__version__ = "1.2.4"
 
 SECTION = 'GOOGLE'
 CACHE_FILE = '.google_token.json'
@@ -92,8 +92,11 @@ class GooglePhotosApi(object):
     """
 
     URL = 'https://photoslibrary.googleapis.com/v1'
-    SCOPES = ['https://www.googleapis.com/auth/photoslibrary',
-              'https://www.googleapis.com/auth/photoslibrary.sharing']
+    # Updated scopes: only allow uploading and managing app-created data
+    SCOPES = [
+        'https://www.googleapis.com/auth/photoslibrary.appendonly',
+        'https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata',
+        'https://www.googleapis.com/auth/photoslibrary.edit.appcreateddata']
 
     def __init__(self, client_id_file, token_file="token.json"):
         self.client_id_file = client_id_file
@@ -160,9 +163,8 @@ class GooglePhotosApi(object):
 
     def get_albums(self, app_created_only=False):
         """Generator to loop through all Google Photos albums."""
-        params = {
-            'excludeNonAppCreatedData': app_created_only
-        }
+        # The new API restricts listing to app-created albums only
+        params = {'excludeNonAppCreatedData': True}
         while True:
             albums = self._session.get(self.URL + '/albums', params=params).json()
             LOGGER.debug("Google Photos server response: %s", albums)
@@ -195,7 +197,11 @@ class GooglePhotosApi(object):
         LOGGER.info("Creating a new Google Photos album '%s'", album_name)
         create_album_body = json.dumps({"album": {"title": album_name}})
 
-        resp = self._session.post(self.URL + '/albums', create_album_body).json()
+        resp = self._session.post(
+            self.URL + '/albums',
+            data=create_album_body,
+            headers={"Content-Type": "application/json"}
+        ).json()
         LOGGER.debug("Google Photos server response: %s", resp)
 
         if "id" in resp:
@@ -225,6 +231,8 @@ class GooglePhotosApi(object):
             # Plugin was disabled at startup but activated after
             self._session = self._get_authorized_session()
 
+        album_id = self.get_album_id(album_name)
+        # Only list or create app-created albums
         album_id = self.get_album_id(album_name)
         if not album_id:
             album_id = self.create_album(album_name)
@@ -257,7 +265,11 @@ class GooglePhotosApi(object):
                     ]
                 })
 
-            resp = self._session.post(self.URL + '/mediaItems:batchCreate', create_body).json()
+            resp = self._session.post(
+                self.URL + '/mediaItems:batchCreate',
+                data=create_body,
+                headers={"Content-Type": "application/json"}
+            ).json()
             LOGGER.debug("Google Photos server response: %s", resp)
 
             if "newMediaItemResults" in resp:
@@ -294,7 +306,22 @@ class GooglePhotosApi(object):
         """
         Get the temporary URL for the picture (valid 1 hour only).
         """
-        resp = self._session.get(self.URL + '/mediaItems/' + photo_id)
+        resp = self._session.get(f"{self.URL}/mediaItems/{photo_id}")
+        if resp.status_code == 200:
+         url = resp.json()['baseUrl']
+          LOGGER.debug('Temporary picture URL -> %s', url)
+          return url
+
+        LOGGER.warning("Can not get temporary URL for Google Photos")
+        return None
+
+
+# === Optional Future Support: Google Photos Picker ===
+# Note: The Library API can no longer browse arbitrary user photos.
+# If you want users to select existing photos, integrate the Picker API:
+# https://developers.google.com/photos/picker/guides/web
+# This would require a front-end flow (browser) that sends a picker-selected
+# mediaItem ID or URL back to this plugin.
         if resp.status_code == 200:
             url = resp.json()['baseUrl']
             LOGGER.debug('Temporary picture URL -> %s', url)
