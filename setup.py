@@ -47,7 +47,8 @@ def main():
         python_requires=">=3.6",
         install_requires=[
             'pibooth>=2.0.0',
-            'google-auth-oauthlib>=0.4.2'
+            'google-auth-oauthlib>=0.4.2',
+            'google-photos-library-api>=0.12.1',
         ],
         zip_safe=False,  # Don't install the lib as an .egg zipfile
         entry_points={'pibooth': ["pibooth_google_photo = pibooth_google_photo"]},
